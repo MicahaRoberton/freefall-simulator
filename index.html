@@ -75,6 +75,12 @@ details .rows{display:flex;flex-direction:column;gap:10px}
 .note{font-size:12px;line-height:1.5;color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
 .note button{border:1px solid var(--amber);color:var(--amber);background:transparent;border-radius:5px;padding:5px 10px;font-size:12px;font-weight:600}
 .linkbtn{justify-self:start;border:0;background:none;padding:0;color:var(--amber);font-size:12px;text-decoration:underline;text-underline-offset:2px}
+.unitsel{background:transparent;border:0;color:var(--muted);font-family:var(--f-mono);font-size:11px;padding:0 0 0 4px;cursor:pointer}
+.unitsel option{background:#0b1219;color:var(--fg)}
+.spdhead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.spdhead .unitsel{border:1px solid var(--line);border-radius:4px;padding:2px 4px;font-size:11px;color:var(--fg)}
+.check{display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer}
+.check input{accent-color:var(--amber);width:16px;height:16px;margin:0}
 .calc{font-size:12.5px;line-height:1.5;color:var(--muted);border-left:2px solid var(--amber);padding-left:10px}
 .calc b{color:var(--fg);font-weight:600}
 #setup footer{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
@@ -196,7 +202,7 @@ details .rows{display:flex;flex-direction:column;gap:10px}
       <div class="row">
         <div class="label"><span>Starting speed</span></div>
         <input type="range" id="spdR" min="0" max="1000" step="1" aria-label="Starting speed slider">
-        <label class="field"><input id="spdN" inputmode="decimal" aria-label="Starting speed"><span class="u-spd">m/s</span></label>
+        <label class="field"><input id="spdN" inputmode="decimal" aria-label="Starting speed"><select class="unitsel" id="spdUnitA" aria-label="Speed unit"><option value="kmh">km/h</option><option value="mph">mph</option><option value="ms">m/s</option><option value="kn">knots</option><option value="fts">ft/s</option></select></label>
       </div>
       <div class="row">
         <div class="label"><span>Flight path angle</span><span>−90° = straight down</span></div>
@@ -208,6 +214,19 @@ details .rows{display:flex;flex-direction:column;gap:10px}
         <input type="range" id="hdgR" min="0" max="359" step="1" aria-label="Heading slider">
         <label class="field"><input id="hdgN" inputmode="decimal" aria-label="Heading"><span>°</span></label>
       </div>
+    </fieldset>
+    <fieldset>
+      <legend class="label">Engines</legend>
+      <div class="row">
+        <div class="label"><span>Engine thrust</span><span id="thrHint"></span></div>
+        <input type="range" id="thrR" min="0" max="1000" step="1" aria-label="Engine thrust slider">
+        <label class="field"><input id="thrN" inputmode="decimal" aria-label="Engine thrust"><span class="u-thr">kN</span></label>
+      </div>
+      <p class="status">Pushes along your direction of travel. No wings, so it speeds you up but won't hold you up. Toggle with E while falling.</p>
+    </fieldset>
+    <fieldset>
+      <legend class="label">Display</legend>
+      <label class="check"><input type="checkbox" id="shakeC"> Shake the view at high speed</label>
     </fieldset>
     <details>
       <summary>Body and drag settings</summary>
@@ -249,7 +268,7 @@ details .rows{display:flex;flex-direction:column;gap:10px}
     </div>
   </div>
   <div class="panel gauge" id="spdG">
-    <div class="label">Speed</div>
+    <div class="label spdhead"><span>Speed</span><select class="unitsel" id="spdUnitB" aria-label="Speed unit"><option value="kmh">km/h</option><option value="mph">mph</option><option value="ms">m/s</option><option value="kn">knots</option><option value="fts">ft/s</option></select></div>
     <div class="big num" id="hSpd">0</div>
     <div class="sub num" id="hSpd2"></div>
     <dl>
@@ -270,6 +289,7 @@ details .rows{display:flex;flex-direction:column;gap:10px}
       <button data-view="fwd" title="Look ahead (2)">Ahead</button>
       <button data-view="hzn" title="Look at the horizon (3)">Horizon</button>
     </div>
+    <div class="ctl"><button id="engBtn" title="Engines on or off (E)" hidden>Engines</button><button id="shakeBtn" title="Shake on or off (S)">Shake</button></div>
     <div class="ctl"><button class="chute" id="chuteBtn" title="Deploy parachute (P)">Parachute</button>
       <button id="abort" title="Back to setup (Esc)">Setup</button></div>
   </div>
@@ -319,7 +339,7 @@ const OBJECTS = [
   {id:"strat", name:"Stratosphere jump", m:118, cda:0.36, chute:45, alt:38969, v:0, ang:0,
    note:"Pressure-suited jump from a balloon at 38,969 m, like the 2012 record. The thin air lets you pass the speed of sound."},
   {id:"liner", name:"Airliner, uncontrolled dive", m:62000, cda:9, chute:0, alt:10668, v:230, ang:-15,
-   note:"A320-sized jet falling from cruise at 35,000 ft with no lift or thrust: modelled as a ballistic body."},
+   note:"A320-sized jet falling from cruise at 35,000 ft with no lift, so it flies like a dart. Two engines at full power give about 240 kN."},
   {id:"cessna",name:"Light plane in a spin", m:1000, cda:1.6, chute:0, alt:2500, v:50, ang:-5,
    note:"A small four-seat plane in a flat spin. Spinning keeps its speed low."},
   {id:"bowl",  name:"Bowling ball", m:7.26, cda:0.0175, chute:0, alt:1000, v:0, ang:-90,
@@ -375,20 +395,25 @@ function groundAt(e,n){
 function makeState(cfg){
   const gam = cfg.ang*Math.PI/180, psi = cfg.hdg*Math.PI/180;
   return {e:0,n:0,z:0, ve:cfg.v*Math.cos(gam)*Math.sin(psi), vn:cfg.v*Math.cos(gam)*Math.cos(psi), vz:cfg.v*Math.sin(gam),
-          t:0, chute:0, chuteT:-1};
+          t:0, chute:0, chuteT:-1, eng:cfg.thrust>0, dir:[Math.cos(gam)*Math.sin(psi), Math.cos(gam)*Math.cos(psi), Math.sin(gam)]};
 }
 function accel(s, cfg, out){
   const at = atmos(s.z), V = Math.hypot(s.ve,s.vn,s.vz);
   const cda = cfg.cda + (s.chuteT>=0 ? cfg.chute*s.chute : 0);
   const k = V>0 ? 0.5*at.rho*V*cda*machFactor(V/at.a)/cfg.m : 0;
   out.ae = -k*s.ve; out.an = -k*s.vn; out.az = -grav(s.z) - k*s.vz;
+  if (s.eng && cfg.thrust>0){
+    // thrust acts along the direction of travel (or the launch direction while nearly still)
+    const a = cfg.thrust/cfg.m, d = V>1 ? [s.ve/V, s.vn/V, s.vz/V] : s.dir;
+    out.ae += a*d[0]; out.an += a*d[1]; out.az += a*d[2];
+  }
   return out;
 }
 const A1={},A2={};
 function step(s, cfg, dt){
   if (s.chuteT>=0){ s.chute = Math.min(1, (s.t - s.chuteT)/2.5); s.chute = s.chute*s.chute; }
   accel(s,cfg,A1);
-  const m = {e:s.e+s.ve*dt/2, n:s.n+s.vn*dt/2, z:s.z+s.vz*dt/2, ve:s.ve+A1.ae*dt/2, vn:s.vn+A1.an*dt/2, vz:s.vz+A1.az*dt/2, chute:s.chute, chuteT:s.chuteT};
+  const m = {e:s.e+s.ve*dt/2, n:s.n+s.vn*dt/2, z:s.z+s.vz*dt/2, ve:s.ve+A1.ae*dt/2, vn:s.vn+A1.an*dt/2, vz:s.vz+A1.az*dt/2, chute:s.chute, chuteT:s.chuteT, eng:s.eng, dir:s.dir};
   accel(m,cfg,A2);
   s.e += m.ve*dt; s.n += m.vn*dt; s.z += m.vz*dt;
   s.ve += A2.ae*dt; s.vn += A2.an*dt; s.vz += A2.az*dt;
@@ -406,11 +431,14 @@ const terminalAt = (z,cfg,chute) => { const at=atmos(z); return Math.sqrt(2*cfg.
 
 /* ================= units ================= */
 let imperial = false;
+const SPD_UNITS = {kmh:[3.6,"km/h"], mph:[2.23694,"mph"], ms:[1,"m/s"], kn:[1.943844,"kn"], fts:[3.28084,"ft/s"]};
+let spdUnit = "kmh";
+try { const u = localStorage.getItem("ff-spd"); if (u && SPD_UNITS[u]) spdUnit = u; } catch(e){}
 const fmt = (x,d=0) => x.toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
 const U = {
   len: m => imperial ? {v:m*3.28084,u:"ft"} : {v:m,u:"m"},
-  spd: v => imperial ? {v:v*2.23694,u:"mph"} : {v:v*3.6,u:"km/h"},
-  inLen: () => imperial ? 3.28084 : 1, inSpd: () => imperial ? 2.23694 : 1, inMass: () => imperial ? 2.20462 : 1,
+  spd: v => { const u = SPD_UNITS[spdUnit]; return {v:v*u[0], u:u[1]}; },
+  inLen: () => imperial ? 3.28084 : 1, inSpd: () => SPD_UNITS[spdUnit][0], inMass: () => imperial ? 2.20462 : 1,
 };
 function massStr(kg){
   if (imperial){ const lb = kg*2.20462; return lb>=2000 ? fmt(lb/2000,1)+" tons" : lb<1 ? fmt(lb*16,2)+" oz" : fmt(lb, lb<10?1:0)+" lb"; }
@@ -432,7 +460,12 @@ function energyStr(j){
 }
 
 /* ================= setup UI ================= */
-const cfg = {place:PLACES[0], obj:OBJECTS[0], m:90, cda:0.48, chute:40, alt:4000, v:45, ang:0, hdg:200};
+const cfg = {place:PLACES[0], obj:OBJECTS[0], m:90, cda:0.48, chute:40, alt:4000, v:45, ang:0, hdg:200, thrust:0};
+let shakeOn = true;
+try { shakeOn = localStorage.getItem("ff-shake") !== "0" && !matchMedia("(prefers-reduced-motion: reduce)").matches; } catch(e){}
+const THR_MAX = 2e6; // N
+const thrToR = t => t<=0 ? 0 : 1000*Math.log(t/100)/Math.log(THR_MAX/100);
+const rToThr = r => r<=0 ? 0 : 100*Math.pow(THR_MAX/100, r/1000);
 let customPlace = null;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function renderZones(){
@@ -454,13 +487,17 @@ function syncInputs(){
   $("spdR").value = Math.min(1000,cfg.v); $("spdN").value = fmt(cfg.v*U.inSpd());
   $("angR").value = cfg.ang; $("angN").value = cfg.ang;
   $("hdgR").value = cfg.hdg; $("hdgN").value = cfg.hdg;
+  $("thrR").value = thrToR(cfg.thrust); $("thrN").value = fmt(cfg.thrust/(imperial?4.44822:1000), imperial?0:1);
+  document.querySelectorAll(".u-thr").forEach(e=>e.textContent=imperial?"lbf":"kN");
+  $("thrHint").textContent = cfg.thrust>0 ? fmt(cfg.thrust/(cfg.m*G0),2)+"× your weight" : "off";
+  $("shakeC").checked = shakeOn;
   $("wtN").value = massIn(cfg.m); $("cdaN").value = cfg.cda; $("chuteN").value = cfg.chute;
   document.querySelectorAll(".u-mass").forEach(e=>e.textContent=imperial?"lb":"kg");
   const changed = Math.abs(cfg.m - cfg.obj.m) > 1e-9;
   $("wtReset").hidden = !changed;
   $("wtHint").textContent = changed ? "preset " + massStr(cfg.obj.m) : "";
   document.querySelectorAll(".u-len").forEach(e=>e.textContent=imperial?"ft":"m");
-  document.querySelectorAll(".u-spd").forEach(e=>e.textContent=imperial?"mph":"m/s");
+  $("spdUnitA").value = spdUnit; $("spdUnitB").value = spdUnit;
   $("units").textContent = imperial ? "IMPERIAL" : "METRIC";
   $("altHint").textContent = cfg.alt>=1000 ? (imperial ? fmt(cfg.alt*3.28084)+" ft" : fmt(cfg.alt/1000,1)+" km") : "";
   updateCalc();
@@ -472,6 +509,10 @@ function updateCalc(){
   let s = `${note} Terminal velocity at sea level is <b>${spdStr(vt)}</b>`;
   if (cfg.alt > 3000) s += `; at your start height it is <b>${spdStr(vtHi)}</b> because the air is thinner`;
   s += ".";
+  if (cfg.thrust>0){
+    const tw = cfg.thrust/(cfg.m*G0);
+    s += ` Engines push with ${fmt(tw,2)}× your weight; in a straight dive at sea level you'd top out near <b>${spdStr(Math.sqrt(2*(cfg.m*G0+cfg.thrust)/(1.225*cfg.cda)))}</b>.`;
+  }
   if (cfg.chute>0) s += ` Under parachute it drops to <b>${spdStr(Math.sqrt(2*cfg.m*G0/(1.225*(cfg.cda+cfg.chute))))}</b>.`;
   $("calc").innerHTML = s;
 }
@@ -500,8 +541,20 @@ $("wtN").addEventListener("change", () => {
   if (isFinite(v) && v>0) cfg.m = Math.min(1e7, Math.max(1e-5, v/U.inMass()));
   syncInputs(); resetPreview();
 });
+function niceThr(t){ if (t<=0) return 0; const p=Math.pow(10,Math.floor(Math.log10(t))-1); return Math.round(t/p)*p; }
+$("thrR").addEventListener("input", () => { cfg.thrust = niceThr(rToThr(+$("thrR").value)); syncInputs(); resetPreview(); });
+$("thrN").addEventListener("change", () => { const v = num($("thrN").value); if (isFinite(v) && v>=0) cfg.thrust = Math.min(THR_MAX*5, v*(imperial?4.44822:1000)); syncInputs(); resetPreview(); });
+function setShake(on){ shakeOn = on; try { localStorage.setItem("ff-shake", on?"1":"0"); } catch(e){}
+  $("shakeC").checked = on; $("shakeBtn").setAttribute("aria-pressed", on); }
+$("shakeC").addEventListener("change", () => setShake($("shakeC").checked));
+$("shakeBtn").addEventListener("click", () => setShake(!shakeOn));
+$("engBtn").addEventListener("click", toggleEngines);
+function toggleEngines(){ if (mode!=="fall" || !(cfg.thrust>0)) return; S.eng = !S.eng; syncEngBtn(); run.tti = null; run.ttiAt = -1; }
+function syncEngBtn(){ $("engBtn").hidden = !(cfg.thrust>0); if (S){ $("engBtn").setAttribute("aria-pressed", !!S.eng); $("engBtn").textContent = S.eng ? "Engines on" : "Engines off"; } }
 $("wtReset").addEventListener("click", () => { cfg.m = cfg.obj.m; syncInputs(); resetPreview(); });
-$("units").addEventListener("click", () => { imperial=!imperial; syncInputs(); });
+$("units").addEventListener("click", () => { imperial=!imperial; if (spdUnit==="kmh"||spdUnit==="mph") setSpdUnit(imperial?"mph":"kmh"); syncInputs(); });
+function setSpdUnit(u){ spdUnit = u; try { localStorage.setItem("ff-spd", u); } catch(e){} syncInputs(); try { if (run && run.hist && run.hist.length) drawChart(); } catch(e){} }
+["spdUnitA","spdUnitB"].forEach(id => $(id).addEventListener("change", () => setSpdUnit($(id).value)));
 
 /* ================= renderer ================= */
 let renderer;
@@ -905,6 +958,7 @@ function jump(){
   $("hPlace").textContent = cfg.place.name;
   $("chuteBtn").disabled = !(cfg.chute>0); $("chuteBtn").textContent = "Parachute";
   $("pause").textContent = "❚❚";
+  syncEngBtn(); setShake(shakeOn);
   startAudio();
 }
 function toSetup(){
@@ -928,6 +982,8 @@ addEventListener("keydown", e => {
   if (mode==="fall"){
     if (e.code==="Space"){ e.preventDefault(); togglePause(); }
     else if (e.key==="p"||e.key==="P") deployChute();
+    else if (e.key==="e"||e.key==="E") toggleEngines();
+    else if (e.key==="s"||e.key==="S") setShake(!shakeOn);
     else if (e.key==="1") setView("down"); else if (e.key==="2") setView("fwd"); else if (e.key==="3") setView("hzn");
     else if (e.key==="Escape") toSetup();
     else if (e.key==="+"||e.key==="="){ const i=WARPS.indexOf(warp); setWarp(WARPS[Math.min(WARPS.length-1,i+1)]); }
@@ -1032,7 +1088,7 @@ function frame(now){
   if (mode==="setup"){ yaw += previewSpin; pitch = -0.5; }
   else pitch = viewMode==="down" || mode==="done" ? -1.5707 : viewMode==="fwd" ? -0.62 : -0.08;
   yaw += lookYaw; pitch = Math.max(-1.5707, Math.min(1.4, pitch + lookPitch));
-  if (mode==="fall" && !paused){ const q = 0.5*at.rho*V*V, sh = Math.min(0.006, q/4e6); yaw += (Math.random()-.5)*sh; pitch += (Math.random()-.5)*sh; }
+  if (mode==="fall" && !paused && shakeOn){ const q = 0.5*at.rho*V*V, sh = Math.min(0.006, q/4e6); yaw += (Math.random()-.5)*sh; pitch += (Math.random()-.5)*sh; }
   camera.position.copy(camW);
   tgtV.set(Math.cos(pitch)*Math.sin(yaw), Math.sin(pitch), -Math.cos(pitch)*Math.cos(yaw)).add(camW);
   camera.up.set(0,1,0);
@@ -1066,7 +1122,7 @@ function updateHUD(st, agl, V, at, now){
   $("hGrav").textContent = fmt(grav(st.z),3)+" m/s²";
   const s1 = U.spd(V);
   $("hSpd").innerHTML = fmt(s1.v)+`<small>${s1.u}</small>`;
-  $("hSpd2").textContent = imperial ? fmt(V*3.6)+" km/h · "+fmt(V,0)+" m/s" : fmt(V*2.23694)+" mph · "+fmt(V,0)+" m/s";
+  $("hSpd2").textContent = ["kmh","mph","ms"].filter(k=>k!==spdUnit).slice(0,2).map(k=>fmt(V*SPD_UNITS[k][0])+" "+SPD_UNITS[k][1]).join(" · ");
   const M = V/at.a; $("hMach").textContent = fmt(M,2) + (M>=1 ? " supersonic" : "");
   const chuteOn = S.chuteT>=0;
   const vt = terminalAt(st.z, cfg, chuteOn); $("hTerm").textContent = spdStr(vt);
